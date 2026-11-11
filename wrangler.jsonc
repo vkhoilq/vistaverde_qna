@@ -31,6 +31,20 @@
     "SHEETS_RANGE": "'Sample QnA Log'!B5:H"
   },
 
+  // Custom domain. Cloudflare creates the DNS record and issues the TLS
+  // certificate automatically because vistaverde.top is a zone in this account.
+  "routes": [
+    {
+      "pattern": "qna.vistaverde.top",
+      "custom_domain": true
+    }
+  ],
+
+  // Keep <name>.<subdomain>.workers.dev working as a fallback, but don't mint a
+  // random preview subdomain on every deployment.
+  "workers_dev": true,
+  "preview_urls": false,
+
   // Refresh the snapshot every 30 minutes so visitors rarely wait on a cold read.
   "triggers": {
     "crons": ["*/30 * * * *"]

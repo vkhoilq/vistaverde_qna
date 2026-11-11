@@ -58,6 +58,25 @@ date alone. Nothing this project uses needs a date newer than 2026-10-08.
 Note `--dry-run` does **not** start the runtime, so it will not catch this. Only
 `npm run dev` does.
 
+## Deployment target
+
+The public URL is **https://qna.vistaverde.top**, attached as a Cloudflare *custom domain*
+via `routes` in `wrangler.jsonc`:
+
+```jsonc
+"routes": [{ "pattern": "qna.vistaverde.top", "custom_domain": true }]
+```
+
+`vistaverde.top` is a zone in the same Cloudflare account (zone id
+`030c7ec399ddfbdf0d0e6665fbc41bc5`), so Cloudflare creates the DNS record and issues the
+certificate on deploy — there is nothing to set up by hand. `workers_dev` stays enabled as a
+fallback URL; `preview_urls` is disabled so deployments do not mint random subdomains.
+
+Change the `pattern` to move to another domain; remove the `routes` block to detach.
+
+The API key needs **no** referrer change for a custom domain — the Worker calls the Sheets
+API server-side, so the key must not carry an HTTP-referrer application restriction.
+
 ## Architecture
 
 ```

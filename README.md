@@ -97,11 +97,21 @@ npx wrangler secret put GEMINI_API_KEY
 npm run deploy
 ```
 
-The site is live at `https://<worker-name>.<subdomain>.workers.dev`.
+The site is live at **https://qna.vistaverde.top**.
 
-To use a custom domain, add it in the Cloudflare dashboard (Workers → your Worker →
-Settings → Domains & Routes). No change to the API key is needed — the Worker calls the
-Sheets API server-side, so the key must not carry an HTTP-referrer restriction.
+`wrangler.jsonc` attaches it as a Cloudflare **custom domain**:
+
+```jsonc
+"routes": [{ "pattern": "qna.vistaverde.top", "custom_domain": true }]
+```
+
+Because `vistaverde.top` is a zone in the same Cloudflare account, Cloudflare creates the
+DNS record and issues the TLS certificate on deploy — nothing to configure by hand. The
+`workers.dev` URL stays enabled as a fallback; `preview_urls` is off so each deployment does
+not mint a random subdomain.
+
+To use a different domain, change the `pattern` in `routes` and redeploy. Removing the
+`routes` block detaches the custom domain.
 
 ### Cron / cache refresh
 
