@@ -1,0 +1,42 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "vista-verde-qna",
+  "main": "src/worker.ts",
+  // wrangler 4.147.0 bundles a workerd that caps compatibility dates at
+  // 2026-10-08. A newer date passes --dry-run but makes `wrangler dev` fail to
+  // start, so keep this pinned until wrangler is upgraded.
+  "compatibility_date": "2026-10-08",
+  "compatibility_flags": ["nodejs_compat"],
+
+  // Frontend is built by the frontend agent into ./public and served as static assets.
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS"
+  },
+
+  // Snapshot cache. This namespace already exists — do not create another one.
+  "kv_namespaces": [
+    {
+      "binding": "QACACHE",
+      "id": "76ce0dc38fb146df954e9c2e67b54343"
+    }
+  ],
+
+  "vars": {
+    // Vista Verde workbook. Test against `Sample QnA Log`; switch to
+    // `QnA Log` (same layout) once the real content is ready.
+    "SPREADSHEET_ID": "1RRbOuo9NwcdWCBE4Uwo5BqNVBuvycT_cAHJEn0AgHEI",
+    // Row 5 is the header row; starting at B skips the empty column A.
+    // Tab names contain spaces, so they must be quoted.
+    "SHEETS_RANGE": "'Sample QnA Log'!B5:H"
+  },
+
+  // Refresh the snapshot every 30 minutes so visitors rarely wait on a cold read.
+  "triggers": {
+    "crons": ["*/30 * * * *"]
+  },
+
+  "observability": {
+    "enabled": true
+  }
+}

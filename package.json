@@ -1,0 +1,22 @@
+{
+  "name": "vistaverde-qna",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Public read-only Q&A site for Vista Verde residents, backed by Google Sheets.",
+  "scripts": {
+    "test": "node --test \"test/**/*.test.ts\"",
+    "typecheck": "tsc --noEmit",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "secret:key": "wrangler secret put SHEETS_API_KEY",
+    "smoke": "node scripts/smoke.ts",
+    "check:sheet": "node scripts/check-sheet.ts",
+    "seed": "node scripts/seed.ts"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20251111.0",
+    "@types/node": "^24.10.1",
+    "typescript": "^5.9.3"
+  }
+}

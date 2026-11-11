@@ -1,0 +1,8 @@
+# Copy to .dev.vars for local development (never commit .dev.vars).
+# Google Sheets API key (Anyone-with-the-link / Viewer access is enough).
+# Production: wrangler secret put SHEETS_API_KEY
+SHEETS_API_KEY=
+
+# Optional. Enables GET /api/ask. Leave empty to keep the LLM endpoint disabled.
+# Production: wrangler secret put GEMINI_API_KEY
+GEMINI_API_KEY=
