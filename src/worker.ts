@@ -1,10 +1,12 @@
 /**
  * Cloudflare Worker: static assets + read-only JSON API.
  *
- * Caching strategy:
+ * Caching strategy — **sync is manual**:
  *  - KV key `qa:snapshot` is the shared source of truth across PoPs.
- *  - Requests are served from KV whenever the snapshot is < 60 minutes old.
- *  - A 30-minute cron refreshes it proactively, so a visitor rarely waits.
+ *  - There is NO cron trigger and NO age-based auto-refresh. A snapshot stays
+ *    live until someone clears it (see the sync guide in README.md).
+ *  - With no snapshot in KV at all, the sheet is read once so the site is
+ *    never empty.
  *  - KV is never written per request.
  *  - A short-lived per-isolate memory cache avoids repeated KV reads.
  */
@@ -16,7 +18,6 @@ import { createSnapshot, fetchSheetValues } from "./sheets.ts";
 import type { Env, Snapshot } from "./types.ts";
 
 const SNAPSHOT_KEY = "qa:snapshot";
-const SNAPSHOT_MAX_AGE_MS = 60 * 60 * 1000;
 const MEMORY_TTL_MS = 60 * 1000;
 const DEFAULT_RANGE = "Q&A!A:G";
 
@@ -111,46 +112,43 @@ export interface LoadedSnapshot {
 }
 
 /**
- * Return the current snapshot. A KV hit younger than 60 minutes short-circuits
- * the Sheets call; a KV miss fetches synchronously and writes KV once.
+ * Return the current snapshot.
+ *
+ * Sync is **manual**: the snapshot is refreshed only when someone clears the
+ * cached copy (see the sync guide in README.md). There is no cron trigger and
+ * no age-based auto-refresh, so a snapshot that is a week old is still served
+ * a week later — that is the intended behaviour.
+ *
+ * The one exception is a cold start: with no snapshot in KV at all (first
+ * deploy, or after a manual sync cleared it) the sheet is read once so the
+ * site is never empty.
  */
 export async function loadSnapshot(
   env: Env,
   fetchImpl: typeof fetch = fetch,
 ): Promise<LoadedSnapshot> {
   const key = configKey(env);
-  const now = Date.now();
 
-  if (memory && memory.key === key && memory.expires > now) {
+  if (memory && memory.key === key && memory.expires > Date.now()) {
     return { snapshot: memory.snapshot, source: "cache" };
   }
 
   const cached = await readCachedSnapshot(env);
   if (cached) {
-    const age = now - Date.parse(cached.fetchedAt);
-    if (Number.isFinite(age) && age >= 0 && age < SNAPSHOT_MAX_AGE_MS) {
-      remember(key, cached);
-      return { snapshot: cached, source: "cache" };
-    }
+    remember(key, cached);
+    return { snapshot: cached, source: "cache" };
   }
 
-  try {
-    const values = await fetchSheetValues(env, fetchImpl);
-    const snapshot = await createSnapshot(values, { sheetRange: resolveRange(env) });
-    await writeSnapshot(env, snapshot);
-    remember(key, snapshot);
-    return { snapshot, source: "sheets" };
-  } catch (error) {
-    // A stale snapshot is better than an error page.
-    if (cached) {
-      remember(key, cached);
-      return { snapshot: cached, source: "cache" };
-    }
-    throw error;
-  }
+  // Cold start only — no snapshot exists yet.
+  const values = await fetchSheetValues(env, fetchImpl);
+  const snapshot = await createSnapshot(values, { sheetRange: resolveRange(env) });
+  await writeSnapshot(env, snapshot);
+  remember(key, snapshot);
+  return { snapshot, source: "sheets" };
 }
 
-/** Force a refresh (cron). Never writes more than once per invocation. */
+/** Read the sheet and write a fresh snapshot to KV. Used by the (disabled) cron
+ *  handler and by the cold-start path. Never writes more than once per call. */
 export async function refreshSnapshot(
   env: Env,
   fetchImpl: typeof fetch = fetch,
@@ -305,6 +303,12 @@ const worker = {
     return handleRequest(request, env);
   },
 
+  /**
+   * Cron handler. **Currently not scheduled** — `wrangler.jsonc` has no
+   * `triggers` block, so this never fires. It is kept so that automatic
+   * refresh can be re-enabled with a config-only change: add a `triggers`
+   * block with a `crons` entry of `0,30 * * * *` (every 30 minutes).
+   */
   async scheduled(
     _controller: ScheduledController,
     env: Env,

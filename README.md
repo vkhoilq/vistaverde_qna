@@ -113,16 +113,74 @@ not mint a random subdomain.
 To use a different domain, change the `pattern` in `routes` and redeploy. Removing the
 `routes` block detaches the custom domain.
 
-### Cron / cache refresh
+### Manual sync (how to publish sheet changes)
 
-`wrangler.jsonc` schedules a cron every 30 minutes that refreshes the KV snapshot, so
-visitors never wait on a cold read. KV free-tier writes are 1000/day; a 30-minute cron
-uses ~48. Do not add a write to KV on the request path.
+**Sync is manual.** There is no cron trigger and no age-based auto-refresh — the site keeps
+serving the snapshot it has until you explicitly clear it. Nothing publishes automatically.
+
+Run this from the project root whenever you have edited the spreadsheet:
+
+```bash
+cd /Volumes/AData/Work/vistaverde_qna
+
+# 1. Clear the cached snapshot from the live KV namespace
+npx wrangler kv key delete --binding QACACHE --remote "qa:snapshot"
+
+# 2. Wait ~60 s for the per-isolate memory cache to expire, then trigger a re-read
+sleep 70
+curl -s https://qna.vistaverde.top/api/health
+
+# 3. Confirm the new content
+curl -s https://qna.vistaverde.top/api/meta
+```
+
+Step 3 returns e.g. `{"total":5,"categories":[…],"source":"sheets","updatedAt":"…"}`. Two
+fields tell you the sync landed:
+
+| Field | Meaning |
+|---|---|
+| `source` | `"sheets"` = the snapshot was just re-read from the spreadsheet; `"cache"` = you are still looking at the old one |
+| `updatedAt` | when the sheet was last read — compare it with the time you started |
+
+If `source` is still `"cache"`, wait a little longer and call `/api/meta` again.
+
+#### The two flags that matter
+
+| Flag | Why it matters |
+|---|---|
+| `--remote` | **Without it, wrangler deletes the *local* dev KV** and the live site never changes. This fails silently — the command still reports success. |
+| `--binding QACACHE` | Resolves the namespace id from `wrangler.jsonc`, so you never need to copy the id by hand. |
+
+Authentication is your existing `wrangler login` (the OAuth token in your keychain — the
+same one `npm run deploy` uses). There is no separate Cloudflare API token to create.
+
+#### How long until visitors see it
+
+Not instant — two caches sit in front of KV:
+
+| Layer | Delay |
+|---|---|
+| Per-isolate memory cache (`MEMORY_TTL_MS`, 60 s) | up to 60 s |
+| KV write propagation to other PoPs | up to ~60 s |
+
+Allow **one to two minutes** before every visitor sees the change. This is why step 2 waits
+before triggering the re-read — the very first request after the delete may still be served
+from a warm isolate.
+
+#### Going back to automatic refresh
+
+The Worker's `scheduled()` handler is still implemented. List a cron in `wrangler.jsonc` to
+re-enable it — for example `"crons": ["0,30 * * * *"]` for every 30 minutes — and redeploy.
+Nothing else needs to change.
+
+⚠️ **To *disable* an existing cron, set `"crons": []` — do not just delete the `triggers`
+block.** An already-deployed schedule is not removed by omitting `triggers`; it stays
+attached to the Worker and keeps firing. An explicit empty list is what detaches it.
 
 ## Verification
 
 ```bash
-npm test                       # 58 unit tests
+npm test                       # 65 unit tests
 npm run typecheck
 npx wrangler deploy --dry-run --outdir dist-check
 ```

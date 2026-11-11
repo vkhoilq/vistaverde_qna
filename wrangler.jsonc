@@ -45,9 +45,20 @@
   "workers_dev": true,
   "preview_urls": false,
 
-  // Refresh the snapshot every 30 minutes so visitors rarely wait on a cold read.
+  // Sync is MANUAL. There is no cron trigger and no age-based auto-refresh:
+  // the KV snapshot stays live until someone clears it, at which point the
+  // next request re-reads the sheet.
+  //
+  //   npx wrangler kv key delete --binding QACACHE --remote "qa:snapshot"
+  //
+  // The empty `crons` list is deliberate: it removes a schedule that was
+  // previously deployed. Simply omitting `triggers` does NOT delete an
+  // already-deployed cron — the schedule stays attached.
+  //
+  // To go back to automatic refresh, list a cron here, e.g. ["0,30 * * * *"]
+  // (the Worker's `scheduled()` handler is already implemented for this).
   "triggers": {
-    "crons": ["*/30 * * * *"]
+    "crons": []
   },
 
   "observability": {

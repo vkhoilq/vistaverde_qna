@@ -204,7 +204,7 @@ test("draft items cannot be found even when the query matches them", async () =>
   }
 });
 
-test("a fresh KV snapshot short-circuits the Sheets call", async () => {
+test("a cached snapshot short-circuits the Sheets call (no auto-refresh)", async () => {
   const kv = new MemoryKV();
   await primeSnapshot(kv);
   const counter = { calls: 0 };
@@ -228,17 +228,41 @@ test("a fresh KV snapshot short-circuits the Sheets call", async () => {
   assert.deepEqual(meta.categories, ["Phí quản lý", "Tiện ích"]);
 });
 
-test("a stale snapshot is served when the upstream refresh fails", async () => {
+test("a stale snapshot is served without refreshing — sync is manual", async () => {
   const kv = new MemoryKV();
   const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
   await primeSnapshot(kv, twoHoursAgo);
 
-  const failingFetch = (async () => new Response("boom", { status: 500 })) as unknown as typeof fetch;
+  const counter = { calls: 0 };
+  const failingFetch = (async () => {
+    counter.calls += 1;
+    return new Response("boom", { status: 500 });
+  }) as unknown as typeof fetch;
+
   const response = await handleRequest(apiRequest("/api/qa"), makeEnv(kv), failingFetch);
 
   assert.equal(response.status, 200);
   const body = (await response.json()) as QaBody;
   assert.equal(body.total, 2);
+  // No age-based refresh: an old snapshot is served as-is until someone
+  // clears it manually.
+  assert.equal(counter.calls, 0);
+});
+
+test("an empty KV reads the sheet once (cold start)", async () => {
+  const kv = new MemoryKV();
+  const counter = { calls: 0 };
+  const countingFetch = sheetsFetch(VALUES, counter);
+
+  const response = await handleRequest(apiRequest("/api/qa"), makeEnv(kv), countingFetch);
+  assert.equal(response.status, 200);
+  assert.equal(counter.calls, 1);
+  assert.equal(kv.putCalls, 1);
+
+  // The second request is served from KV — no further Sheets call.
+  const second = await handleRequest(apiRequest("/api/qa"), makeEnv(kv), countingFetch);
+  assert.equal(second.status, 200);
+  assert.equal(counter.calls, 1);
 });
 
 test("upstream failures return a JSON 500 without leaking secrets or bodies", async () => {

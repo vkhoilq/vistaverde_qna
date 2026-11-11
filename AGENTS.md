@@ -77,6 +77,31 @@ Change the `pattern` to move to another domain; remove the `routes` block to det
 The API key needs **no** referrer change for a custom domain — the Worker calls the Sheets
 API server-side, so the key must not carry an HTTP-referrer application restriction.
 
+## Sync is manual — nothing publishes automatically
+
+There is **no cron trigger and no age-based auto-refresh**. The Worker serves the snapshot
+it has until someone clears it. `wrangler.jsonc` has no `triggers` block on purpose.
+
+To publish sheet changes:
+
+```bash
+npx wrangler kv key delete --binding QACACHE --remote "qa:snapshot"   # clear the cache
+sleep 70                                                              # let the isolate cache expire
+curl -s https://qna.vistaverde.top/api/meta                           # source should become "sheets"
+```
+
+- **`--remote` is mandatory.** Without it wrangler clears the *local* dev KV and the live
+  site never changes — and still reports success.
+- Auth is the existing `wrangler login`; no separate Cloudflare API token exists.
+- Allow ~1–2 min for the isolate memory cache plus KV propagation.
+- The `scheduled()` handler in `src/worker.ts` is still implemented, so automatic refresh
+  can be re-enabled with a `triggers` block only. Full guide in `README.md`.
+- **To disable an existing cron, set `"crons": []` — omitting the `triggers` block does
+  NOT detach an already-deployed schedule.** It keeps firing.
+
+**If you change the snapshot shape** (e.g. add a field to `QAItem`), the cached JSON will
+not have it until the cache is cleared — otherwise the new field simply reads as empty.
+
 ## Architecture
 
 ```
@@ -148,10 +173,10 @@ Vietnamese is written without spaces between syllables, so whitespace splitting 
 
 - Sheets API: **300 reads/min/project, 60 reads/min/user**. An API key counts as ONE user,
   so **60/min is the real ceiling**. Never read the sheet on the request path.
-- Serve from **Workers KV** (`QACACHE`, key `qa:snapshot`); refresh only if older than
-  60 minutes. A 30-minute cron also refreshes proactively.
-- KV free tier: **1000 writes/day**. A 30-minute cron is ~48/day. **Do not write KV per
-  request.**
+- Serve from **Workers KV** (`QACACHE`, key `qa:snapshot`); it is refreshed **only** by an
+  explicit cache clear (see the manual-sync section above), never by age.
+- KV free tier: **1000 writes/day**. **Do not write KV per request** — a manual sync is one
+  write.
 - **After changing the snapshot shape, the served data is stale.** Both the KV snapshot and
   the 60-second isolate cache hold the *old* JSON, so a newly added field comes back empty
   even though the code is correct. Force a refresh:
