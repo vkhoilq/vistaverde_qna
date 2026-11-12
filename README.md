@@ -11,6 +11,8 @@ Public Q&A site for residents of **Chung cư Vista Verde** (Ho Chi Minh City).
 See [`docs/SHEET_SETUP.md`](docs/SHEET_SETUP.md) for the sheet contract — read it before
 touching anything, the column and date conventions are load-bearing.
 
+Known gaps and optional improvements are tracked in [`TODO.md`](TODO.md).
+
 ## Architecture
 
 ```
